@@ -225,7 +225,16 @@ const PALETTE = [
   ['#fcd34d','#451a03'], ['#6ee7f7','#0c3547'],
 ];
 
-let entries = [{ name:'Entry 1' }, { name:'Entry 2' }, { name:'Entry 3' }];
+// University Lingo: Fetching Data Persistence from LocalStorage on initialization
+let entries = JSON.parse(localStorage.getItem('wheelo_data')) || [
+  { name:'Entry 1' }, { name:'Entry 2' }, { name:'Entry 3' }
+];
+
+// Helper to commit state changes to permanent storage
+function commitToStorage() {
+  localStorage.setItem('wheelo_data', JSON.stringify(entries));
+}
+
 let spinning = false;
 let currentAngle = 0;
 
@@ -255,7 +264,6 @@ function drawWheel(rotation) {
     ctx.fillStyle = '#e5d3b8'; ctx.fill(); return;
   }
 
-  // ── Draw slices ──
   segs.forEach(seg => {
     const col = PALETTE[seg.idx % PALETTE.length];
     const sa = seg.startAngle + rotation;
@@ -266,57 +274,36 @@ function drawWheel(rotation) {
     ctx.strokeStyle = '#7c5c3e'; ctx.lineWidth = 2; ctx.stroke();
   });
 
-  // ── Draw labels ──
   segs.forEach(seg => {
     const sliceSpan = seg.endAngle - seg.startAngle;
     if (sliceSpan < 0.05) return;
-
     const col = PALETTE[seg.idx % PALETTE.length];
     const midAngle = seg.startAngle + sliceSpan / 2 + rotation;
     const name = entries[seg.idx].name || ('Entry ' + (seg.idx + 1));
-
-    // Font scales with slice size, min 6 max 11
     const fontSize = Math.max(6, Math.min(11, Math.round(sliceSpan * 22)));
-
-    // The usable spoke runs from just outside the hub to just inside the rim
-    const hubClear = 28;   // clear the center hub
-    const rimClear = 12;   // gap from rim edge
-    const spokeLen = r - hubClear - rimClear; // total usable length along spoke
+    const hubClear = 28;   
+    const rimClear = 12;   
+    const spokeLen = r - hubClear - rimClear; 
 
     ctx.save();
-    // Move to wheel center, rotate so +x points along this slice's midline
     ctx.translate(cx, cy);
     ctx.rotate(midAngle);
-
-    // Set up font to measure
     ctx.font = fontSize + "px 'Press Start 2P', monospace";
-
-    // Truncate label to fit the spoke length
     let label = name;
     while (label.length > 1 && ctx.measureText(label).width > spokeLen) {
       label = label.slice(0, -2) + '\u2026';
     }
-
     const labelW = ctx.measureText(label).width;
-
-    // Center the label along the spoke:
-    // spoke starts at x = hubClear, ends at x = hubClear + spokeLen
-    // so centered x start = hubClear + (spokeLen - labelW) / 2
     const xStart = hubClear + (spokeLen - labelW) / 2;
-
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = col[1];
     ctx.fillText(label, xStart, 0);
-
     ctx.restore();
   });
 
-  // ── Outer rim ──
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
   ctx.strokeStyle = '#7c5c3e'; ctx.lineWidth = 5; ctx.stroke();
-
-  // ── Center hub ──
   ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2);
   ctx.fillStyle = '#fdf6e3'; ctx.fill();
   ctx.strokeStyle = '#7c5c3e'; ctx.lineWidth = 3; ctx.stroke();
@@ -387,9 +374,12 @@ function launchConfetti() {
 
 function openModal()  { document.getElementById('modalOverlay').classList.add('open'); }
 function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+
 function confirmReset() {
   closeModal();
+  // Resetting state and purging persistent data
   entries = [{ name:'Entry 1' }, { name:'Entry 2' }, { name:'Entry 3' }];
+  commitToStorage();
   currentAngle = 0;
   document.getElementById('resultIdle').style.display = '';
   document.getElementById('resultName').style.display = 'none';
@@ -407,11 +397,23 @@ function renderEntries() {
     const inp = document.createElement('input');
     inp.className = 'entry-input'; inp.type = 'text'; inp.value = e.name;
     inp.placeholder = 'name...'; inp.maxLength = 20;
-    inp.addEventListener('input', () => { entries[i].name = inp.value; drawWheel(currentAngle); });
+    
+    // Synchronizing model changes with storage on input event
+    inp.addEventListener('input', () => { 
+      entries[i].name = inp.value; 
+      commitToStorage();
+      drawWheel(currentAngle); 
+    });
+    
     row.appendChild(inp);
     if (entries.length > 1) {
       const del = document.createElement('button'); del.className = 'del-btn'; del.textContent = 'X';
-      del.onclick = () => { entries.splice(i, 1); renderEntries(); drawWheel(currentAngle); };
+      del.onclick = () => { 
+        entries.splice(i, 1); 
+        commitToStorage();
+        renderEntries(); 
+        drawWheel(currentAngle); 
+      };
       row.appendChild(del);
     }
     list.appendChild(row);
@@ -421,6 +423,7 @@ function renderEntries() {
 
 function addEntry() {
   entries.push({ name: 'Entry ' + (entries.length + 1) });
+  commitToStorage();
   renderEntries(); drawWheel(currentAngle);
   const list = document.getElementById('entriesList');
   setTimeout(() => { list.scrollTop = list.scrollHeight; }, 50);
